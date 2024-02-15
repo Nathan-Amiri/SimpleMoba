@@ -1,17 +1,15 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 
 public class Player : MonoBehaviour
 {
     // PREFAB REFERENCE:
     [SerializeField] private SpriteRenderer healthBar;
-
-    // SCENE REFERENCE:
     [SerializeField] protected Rigidbody2D rb;
 
-    [SerializeField] private List<Image> hudAbilities;
+    // SCENE REFERENCE:
+    [SerializeField] protected SceneReference sceneReference;
 
     // CONSTANT:
     private readonly float moveSpeed = 2.5f;
@@ -23,7 +21,7 @@ public class Player : MonoBehaviour
     // DYNAMIC:
     private Camera mainCamera;
 
-    private Vector2 mousePos;
+    protected Vector2 mousePos;
 
     private int currentHealth;
         // Set by each character
@@ -34,13 +32,18 @@ public class Player : MonoBehaviour
 
         // Movement
     private Vector2 moveClickPosition;
+    protected Vector2 moveDirection;
+
+    private float moveSpeedMultiplier = 1;
 
     private bool isStunned;
+    private bool isImmune;
 
     private Coroutine stunRoutine;
     private Coroutine knockBackRoutine;
+    private Coroutine immunityRoutine;
 
-    private void Awake()
+    protected virtual void Awake()
     {
         mainCamera = Camera.main;
 
@@ -74,10 +77,10 @@ public class Player : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.S))
             moveClickPosition = transform.position;
 
-        if (Input.GetKeyDown(KeyCode.Q) && !abilitiesOnCooldown[0]) UseAbility1();
-        if (Input.GetKeyDown(KeyCode.W) && !abilitiesOnCooldown[1]) UseAbility2();
-        if (Input.GetKeyDown(KeyCode.E) && !abilitiesOnCooldown[2]) UseAbility3();
-        if (Input.GetKeyDown(KeyCode.R) && !abilitiesOnCooldown[3]) UseUltimate();
+        if (Input.GetKeyDown(KeyCode.Q) && !abilitiesOnCooldown[0]) StartCoroutine(UseAbility1());
+        if (Input.GetKeyDown(KeyCode.W) && !abilitiesOnCooldown[1]) StartCoroutine(UseAbility2());
+        if (Input.GetKeyDown(KeyCode.E) && !abilitiesOnCooldown[2]) StartCoroutine(UseAbility3());
+        if (Input.GetKeyDown(KeyCode.R) && !abilitiesOnCooldown[3]) StartCoroutine(UseUltimate());
     }
 
     private void FixedUpdate()
@@ -103,14 +106,14 @@ public class Player : MonoBehaviour
             return;
         }
         
-        Vector2 moveDirection = (moveClickPosition - (Vector2)transform.position).normalized;
-        rb.velocity = moveSpeed * moveDirection;
+        moveDirection = (moveClickPosition - (Vector2)transform.position).normalized;
+        rb.velocity = moveSpeed * moveSpeedMultiplier * moveDirection;
     }
 
-    protected virtual void UseAbility1() { }
-    protected virtual void UseAbility2() { }
-    protected virtual void UseAbility3() { }
-    protected virtual void UseUltimate() { }
+    protected virtual IEnumerator UseAbility1() { yield break; }
+    protected virtual IEnumerator UseAbility2() { yield break; }
+    protected virtual IEnumerator UseAbility3() { yield break; }
+    protected virtual IEnumerator UseUltimate() { yield break; }
 
     protected IEnumerator StartAbilityCooldown(int ability)
     {
@@ -123,12 +126,12 @@ public class Player : MonoBehaviour
             cooldown -= Time.deltaTime;
 
             float percentage = cooldown / abilityCooldowns[ability];
-            hudAbilities[ability].fillAmount = percentage;
+            sceneReference.hudAbilities[ability].fillAmount = percentage;
 
             yield return null;
         }
 
-        hudAbilities[ability].fillAmount = 0;
+        sceneReference.hudAbilities[ability].fillAmount = 0;
 
         abilitiesOnCooldown[ability] = false;
     }
@@ -145,12 +148,29 @@ public class Player : MonoBehaviour
 
     public void HealthChange(int amount)
     {
+        if (amount < 0 && isImmune)
+            return;
+
         currentHealth += amount;
         UpdateHealthBar();
     }
 
-    public void ApplyStun(float duration)
+    public void ChangeMoveSpeed(float changeAmount, bool resetMoveSpeed = false, bool bypassImmunity = false)
     {
+        if (isImmune && !bypassImmunity)
+            return;
+
+        if (resetMoveSpeed)
+            moveSpeedMultiplier = 1;
+        else
+            moveSpeedMultiplier += changeAmount;
+    }
+
+    public void ApplyStun(float duration, bool bypassImmunity = false)
+    {
+        if (isImmune && !bypassImmunity)
+            return;
+
         isStunned = true;
         rb.velocity = Vector2.zero;
 
@@ -169,6 +189,9 @@ public class Player : MonoBehaviour
 
     public void ApplyKnockBack(float duration, Vector2 force)
     {
+        if (isImmune)
+            return;
+
         isStunned = true;
         rb.velocity = Vector2.zero;
         rb.drag = knockBackDrag;
@@ -186,5 +209,20 @@ public class Player : MonoBehaviour
         rb.drag = 0;
         isStunned = false;
         moveClickPosition = transform.position;
+    }
+
+    public void BecomeImmune(float duration)
+    {
+        isImmune = true;
+
+        if (immunityRoutine != null)
+            StopCoroutine(immunityRoutine);
+        immunityRoutine = StartCoroutine(Immunity(duration));
+    }
+    private IEnumerator Immunity(float duration)
+    {
+        yield return new WaitForSeconds(duration);
+
+        isImmune = false;
     }
 }

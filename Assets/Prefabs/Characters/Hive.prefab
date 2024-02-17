@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 3690641175054748987}
   - component: {fileID: 5841701770690266590}
   - component: {fileID: 4624605228582391967}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Hive
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -162,11 +162,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 279b7c5a3b27dd04da0c3212ea13f816, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  healthBar: {fileID: 4021058411522462905}
+  healthBar: {fileID: 6555265572400298170}
+  healthBarSR: {fileID: 4021058411522462905}
   rb: {fileID: 3690641175054748987}
   sceneReference: {fileID: 0}
-  riftPref: {fileID: 6107287400526590979, guid: c48340fb4403d9a45abf95be719ebc93, type: 3}
-  dashDuration: 0.4
+  isEnemy: 0
+  riftPref: {fileID: -2068863281482644715, guid: c48340fb4403d9a45abf95be719ebc93, type: 3}
+  riftDamage: 0
 --- !u!1 &6555265572400298170
 GameObject:
   m_ObjectHideFlags: 0
@@ -177,7 +179,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2659708060543621065}
   - component: {fileID: 4021058411522462905}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: HealthBar
   m_TagString: Untagged
   m_Icon: {fileID: 0}

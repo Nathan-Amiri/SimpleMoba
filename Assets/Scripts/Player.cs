@@ -5,16 +5,21 @@ using UnityEngine;
 public class Player : MonoBehaviour
 {
     // PREFAB REFERENCE:
-    [SerializeField] private SpriteRenderer healthBar;
+    [SerializeField] private GameObject healthBar;
+    [SerializeField] private SpriteRenderer healthBarSR;
     [SerializeField] protected Rigidbody2D rb;
 
     // SCENE REFERENCE:
     [SerializeField] protected SceneReference sceneReference;
 
+    [SerializeField] private bool isEnemy;
+
     // CONSTANT:
     private readonly float moveSpeed = 2.5f;
     // At this distance from the move click position, the player will stop moving
     private readonly float moveSnapDistance = .03f;
+
+    private readonly float abilityBufferDuringStun = .3f;
 
     private readonly float knockBackDrag = 10;
 
@@ -26,9 +31,13 @@ public class Player : MonoBehaviour
     private int currentHealth;
         // Set by each character
     protected int maxHealth;
-    protected List<int> abilityCooldowns;
 
-    private readonly List<bool> abilitiesOnCooldown = new() { false, false, false, false };
+    private readonly float[] abilityCurrentCooldowns = new float[4];
+    private readonly float[] abilityCooldownDurations = new float[4];
+
+    private List<int> abilityMaxCharges;
+    private List<int> abilityCurrentCharges;
+
 
         // Movement
     private Vector2 moveClickPosition;
@@ -52,7 +61,15 @@ public class Player : MonoBehaviour
         maxHealth = SetMaxHealth();
         currentHealth = maxHealth;
 
-        abilityCooldowns = SetAbilityCooldowns();
+        if (isEnemy)
+            return;
+
+        // Copy the lists
+        abilityMaxCharges = new(SetAbilityMaxCharges());
+        abilityCurrentCharges = new(abilityMaxCharges);
+
+        for (int i = 0; i < 4; i++)
+            UpdateHudAbilityCharges(i);
     }
 
     protected virtual int SetMaxHealth()
@@ -61,14 +78,28 @@ public class Player : MonoBehaviour
         return 0;
     }
 
-    protected virtual List<int> SetAbilityCooldowns()
+    protected virtual List<int> SetAbilityMaxCharges()
     {
-        Debug.LogError("Character did not set ability cooldowns");
-        return default;
+        // Characters do not need to override this method unless some abilities have extra charges
+        return new() { 1, 1, 1, 1 };
     }
 
     private void Update()
     {
+        if (isEnemy)
+            return;
+
+        for (int i = 0; i < 4; i++)
+            UpdateAbilityCooldowns(i);
+
+        if (Input.GetKeyDown(KeyCode.Q)) UseAbility(0);
+        if (Input.GetKeyDown(KeyCode.W)) UseAbility(1);
+        if (Input.GetKeyDown(KeyCode.E)) UseAbility(2);
+        if (Input.GetKeyDown(KeyCode.R)) UseAbility(3);
+
+        if (isStunned)
+            return;
+
         mousePos = mainCamera.ScreenToWorldPoint(Input.mousePosition);
 
         if (Input.GetMouseButtonDown(1))
@@ -76,20 +107,44 @@ public class Player : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.S))
             moveClickPosition = transform.position;
+    }
 
-        if (Input.GetKeyDown(KeyCode.Q) && !abilitiesOnCooldown[0]) StartCoroutine(UseAbility1());
-        if (Input.GetKeyDown(KeyCode.W) && !abilitiesOnCooldown[1]) StartCoroutine(UseAbility2());
-        if (Input.GetKeyDown(KeyCode.E) && !abilitiesOnCooldown[2]) StartCoroutine(UseAbility3());
-        if (Input.GetKeyDown(KeyCode.R) && !abilitiesOnCooldown[3]) StartCoroutine(UseUltimate());
+    private void UseAbility(int ability)
+    {
+        if (abilityCurrentCharges[ability] == 0)
+            return;
+
+        if (isStunned)
+        {
+            StartCoroutine(BufferAbilityDuringStun(ability));
+            return;
+        }
+
+        if (ability == 0) StartCoroutine(UseAbility1());
+        if (ability == 1) StartCoroutine(UseAbility2());
+        if (ability == 2) StartCoroutine(UseAbility3());
+        if (ability == 3) StartCoroutine(UseUltimate());
+    }
+    private IEnumerator BufferAbilityDuringStun(int ability)
+    {
+        yield return new WaitForSeconds(abilityBufferDuringStun);
+
+        UseAbility(ability);
     }
 
     private void FixedUpdate()
     {
+        if (isEnemy)
+            return;
+
         Movement();
     }
 
     private void LateUpdate()
     {
+        if (isEnemy)
+            return;
+
         mainCamera.transform.position = new(transform.position.x, transform.position.y, -10);
     }
 
@@ -98,7 +153,6 @@ public class Player : MonoBehaviour
     {
         if (isStunned)
             return;
-
 
         if (Vector2.Distance(transform.position, moveClickPosition) < moveSnapDistance)
         {
@@ -115,35 +169,69 @@ public class Player : MonoBehaviour
     protected virtual IEnumerator UseAbility3() { yield break; }
     protected virtual IEnumerator UseUltimate() { yield break; }
 
-    protected IEnumerator StartAbilityCooldown(int ability)
+
+    protected void StartAbilityCooldown(int ability, float cooldown)
     {
-        abilitiesOnCooldown[ability] = true;
+        // Allow characters to set the ability cooldown each time in case a character's ability
+        // doesn't always have the same cooldown duration
+        abilityCurrentCooldowns[ability] = cooldown;
+        abilityCooldownDurations[ability] = cooldown;
 
-        float cooldown = abilityCooldowns[ability];
+        if (abilityCurrentCharges[ability] < 1)
+            Debug.LogError("Ability " + ability + " was used when it didn't have a charge");
 
-        while (cooldown > 0)
+        abilityCurrentCharges[ability] -= 1;
+        UpdateHudAbilityCharges(ability);
+    }
+
+    // Run in Update for each ability
+    private void UpdateAbilityCooldowns(int ability)
+    {
+        if (abilityCurrentCharges[ability] == abilityMaxCharges[ability])
+            return;
+
+        // Run cooldown. Note: this code only works if no character will ever change the max cooldown of
+        // an ability while a cooldown is in progress, which should never happen unless an ability has
+        // both multiple charges AND an inconsistent cooldown duration.
+        if (abilityCurrentCooldowns[ability] > 0)
         {
-            cooldown -= Time.deltaTime;
+            abilityCurrentCooldowns[ability] -= Time.deltaTime;
 
-            float percentage = cooldown / abilityCooldowns[ability];
+            float percentage = abilityCurrentCooldowns[ability] / abilityCooldownDurations[ability];
             sceneReference.hudAbilities[ability].fillAmount = percentage;
 
-            yield return null;
+            return;
         }
 
+        // Snap fillAmount after cooldown completes
         sceneReference.hudAbilities[ability].fillAmount = 0;
 
-        abilitiesOnCooldown[ability] = false;
+        abilityCurrentCharges[ability] += 1;
+        UpdateHudAbilityCharges(ability);
+
+        // Restart cooldown if not at max charges
+        if (abilityCurrentCharges[ability] < abilityMaxCharges[ability])
+            abilityCurrentCooldowns[ability] = abilityCooldownDurations[ability];
+    }
+
+    private void UpdateHudAbilityCharges(int ability)
+    {
+        if (abilityMaxCharges[ability] == 1)
+            return;
+
+        int currentCharges = abilityCurrentCharges[ability];
+        string text = currentCharges > 0 ? currentCharges.ToString() : string.Empty;
+        sceneReference.hudAbilityCharges[ability].text = text;
     }
 
     private void UpdateHealthBar()
     {
         float healthPercentage = currentHealth / (float)maxHealth;
 
-        Vector2 healthBarSize = healthBar.size;
+        Vector2 healthBarSize = healthBarSR.size;
         // Ensure that healthBar never shrinks enough to become fully black
         healthBarSize.x = 4.5f * healthPercentage + .5f;
-        healthBar.size = healthBarSize;
+        healthBarSR.size = healthBarSize;
     }
 
     public void HealthChange(int amount)
@@ -152,7 +240,17 @@ public class Player : MonoBehaviour
             return;
 
         currentHealth += amount;
-        UpdateHealthBar();
+
+        if (currentHealth < 0)
+            currentHealth = 0;
+
+        if (currentHealth == 0)
+        {
+            Debug.Log("Game over!");
+            healthBar.SetActive(false);
+        }
+        else
+            UpdateHealthBar();
     }
 
     public void ChangeMoveSpeed(float changeAmount, bool resetMoveSpeed = false, bool bypassImmunity = false)
@@ -214,15 +312,28 @@ public class Player : MonoBehaviour
     public void BecomeImmune(float duration)
     {
         isImmune = true;
+        healthBar.SetActive(false);
 
         if (immunityRoutine != null)
             StopCoroutine(immunityRoutine);
         immunityRoutine = StartCoroutine(Immunity(duration));
     }
+    public void CancelImmunity()
+    {
+        if (immunityRoutine != null)
+        {
+            StopCoroutine(immunityRoutine);
+            StartCoroutine(Immunity(0));
+        }
+    }
     private IEnumerator Immunity(float duration)
     {
         yield return new WaitForSeconds(duration);
 
+        if (currentHealth > 0)
+            healthBar.SetActive(true);
+
+        immunityRoutine = null;
         isImmune = false;
     }
 }
